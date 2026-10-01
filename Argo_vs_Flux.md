@@ -1,6 +1,6 @@
 # Argo CD vs. Flux
 
-Both are **GitOps continuous delivery (CD)** tools for Kubernetes, not CI tools. They do not build or test code; they watch a Git repo (or OCI registry / Helm repo) that holds the desired cluster state and reconcile the cluster to match it. CI (GitHub Actions, GitLab CI, CodeBuild, Jenkins, ...) still builds the image and updates the manifest in Git; Argo CD or Flux then deploys it. Both are CNCF graduated projects.
+Both are **GitOps continuous delivery (CD)** tools for Kubernetes, they watch a Git repo (or OCI registry / Helm repo) that holds the desired cluster state and reconcile the cluster to match it. CI (GitHub Actions, GitLab CI, CodeBuild, Jenkins, ...) builds the image and updates the manifest in Git; Argo CD or Flux then deploys it. Both are CNCF graduated projects.
 
 ## At a glance
 
