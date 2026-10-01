@@ -1,3 +1,57 @@
+## Question
+
+Regarding the vertical pod autoscaler, is that capable to modify the value for "request cpu" of a specific container inside a pod? For example, to squeeze a pod onto a node which otherwise would have been too large?
+
+Yes, with caveats. VPA works per container, not per pod, and it sets resources.requests (CPU and/or memory) on individual containers. In the VPA object you scope that with containerPolicies:
+
+```
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: web
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  updatePolicy:
+    updateMode: Auto          # Off | Initial | Recreate | Auto | InPlaceOrRecreate
+  resourcePolicy:
+    containerPolicies:
+      - containerName: app
+        controlledResources: ["cpu"]      # only touch CPU
+        controlledValues: RequestsOnly    # or RequestsAndLimits
+        minAllowed:
+          cpu: 100m
+        maxAllowed:
+          cpu: "2"
+      - containerName: sidecar
+        mode: "Off"                       # leave this container alone
+
+```
+
+So the mechanics you asked about exist: it can lower requests.cpu of one specific container and leave the others untouched, and if a smaller request is the result, the pod will then fit onto a node it did not fit on before.
+
+The caveat is the why. VPA does not look at nodes or at scheduling failures. The recommender looks at the container's historical usage (from metrics-server, roughly an 8-day decaying histogram) and derives target/lower/upper bounds. It lowers the request only because the container has been using less than requested, never because "there is a node with 1.5 vCPU free". If the container genuinely needs 2 vCPU, VPA will keep (or raise) the request and the pod stays unschedulable; the only cap it applies is the largest node's allocatable, so it won't recommend something no node could ever hold.
+
+---
+
+## Question
+
+When a node group of an EKS cluster gets a notification from the cluster autoscaler to scale in, which rule exists to pick a specific node from the EC2 autoscaling group (ASG)?
+
+**Short answer:** there is no ASG rule involved. The Cluster Autoscaler picks the node itself and tells the ASG exactly which instance to terminate.
+
+How it actually works:
+
+CA evaluates every node in the node group. A node becomes a scale-down candidate when its requested CPU/memory stays below --scale-down-utilization-threshold (default 50%) for --scale-down-unneeded-time (default 10 min), and all its pods could be rescheduled elsewhere. Nodes are excluded if they run pods that block eviction: non-replicated pods (not backed by a controller), pods with local storage, kube-system pods without a PDB, pods annotated cluster-autoscaler.kubernetes.io/safe-to-evict: "false", or the node itself carries cluster-autoscaler.kubernetes.io/scale-down-disabled: "true".
+
+From the candidates, CA removes empty nodes in bulk (up to --max-empty-bulk-delete, default 10) and non-empty nodes one at a time: cordon, evict pods respecting PDBs, wait for pods to go.
+
+Then it calls the EC2 Auto Scaling API TerminateInstanceInAutoScalingGroup with that specific instance ID and ShouldDecrementDesiredCapacity=true. Because the instance is named explicitly, the ASG's termination policy never runs.
+
+---
+
 # EKS Q&A — Scheduling Conflicts
 
 ## Question
